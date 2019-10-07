@@ -1,0 +1,793 @@
+\documentclass[a4paper]{article}
+
+\usepackage{amsfonts}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{graphicx}
+\usepackage{babel,textcomp}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{listings}
+\usepackage{xcolor}
+\usepackage[a4paper]{geometry}
+\usepackage{enumerate}
+
+\usepackage{titling}
+\usepackage{blindtext}
+\usepackage{multirow}
+\usepackage{caption}
+\usepackage{subcaption}
+
+\newcommand{\R}{\mathbb{R}}
+
+\title{\textbf{Project 1 \\ FYS-STK4155}}
+\author{Mina Tangen \& Tham Le (for code: see github.com/minatang1/project1)}
+
+\begin{document} 
+
+\begin{titlingpage}
+\maketitle
+
+\begin{abstract}
+
+This report looks at the three different regression methods; Ordinary Least Squares (OLS), Ridge and LASSO. First, the three methods are used to fit Franke's Function using polynomials of degree up to $n = 20$ (in different methods). The methods are evaluted using the Mean Squared Error (MSE) and R2 scores. Confidence intervals are produced for the regression estimates. The bootstrap method was implemented as resampling. Then, the same methods are used to fit real terrain data.
+
+We found that the OLS method gave the best results. The polynomial of degree 7 gave the best result for Franke's function using OLS and degree 5 for Ridge after bootstrapping. 
+OLS performed best overall at Franke's function without noise and terrain data. MSE scores were difficult to interpret for the terrain data.
+
+\end{abstract}
+
+\end{titlingpage}
+
+\section{Introduction}
+
+%Regression is used to explain how one variable depends on other variables (Devore \& Berk (2012)). As hydrologists, we want to describe how the different components of the water cycle are related and affected by each other. For instance, we use hydrological models to describe how runoff depends on precipitation amount and intensity, soil capacity, temperature and many other variables. In other fields of science alike, the scientists want to find dependencies and trends in datasets. \\
+%Given one or more indepent variables (rainfall, infiltration capacity of the soil etc.) we want to predict a dependent variable (runoff) using these independent variables.
+
+
+
+% The datasets we gather from measuring the said hydrological variables can be huge and imperfect. The performance of the regression methods will depend on the quality of the dataset. We will in this assignment use a small/medium sized dataset. \\
+
+% In this assignment we are using regression methods to find a fit of a given function and then use the same methods to find a fit to real terrain data.
+
+% After gathering huge amounts of runoff and precipitation data, we look for trends in the dataset.
+
+%This report will first give a descripition of the different regression methods used and the evaluation functions used to decide which model best fit our function.
+
+% In our field of science, hydrology, regression can for instance be used to explain how runoff, i.e. [sett inn definisjon], depends on precipitation,
+
+%The aim when using regression methods is to establish a relationship between variables. Once this relationship is determined, we can predict one of the variables through knowing the values of the other variables (Devore \& Berk, 2012). 
+
+Linear regression methods is an important part in Machine Learning, fitting the models to the data by modeling a dependent response by predictor values. In modern society it has been more common to see research projects with big and complexed data sets to extract patterns. Making good predicted models with small errors is one of the biggest challenges we face today. And in a world full of different algorithms, it's hard to choose the right one based on the complexity of the data set.
+
+
+In this project we are using regression to fit a bivariate function, the so-called Franke's function (equation \ref{eq:Franke} given in the appendix). A plot  is shown in figure \ref{fig:FrankePlot}.
+We then want to use the same methods to fit a surface like the one shown figure \ref{fig:FrankePlot}
+
+\begin{figure}[h]
+  \includegraphics{franke_plot1.png}
+  \caption{Franke's function}
+  \label{fig:FrankePlot}
+\end{figure}
+
+just that this surface is based on real terrain data.  We will use bivariate polynomials of degree up to $n = 5$ and use evaluation metrics to evaluate the models. We will also look at how the evaluation metrics changes with differences in the noise we add to our dataset and differences in the hyperparameters that Ridge and LASSO depends on (as described later).
+The questions we want to answer is thus, which polynomial degree gives the best fit for Franke's function and the terrain data, and what are the optimal choices for the hyperparameters? \\
+
+The first section describes the methods and theoretical basis for the algorithms used in the project. Here, we also discuss the evaluation metrics and the bias-variance trade-off. The next section presents the results, followed by a discussion of these results. We reach a conclusion in the last section. Additional equations and code examples are presented in the Appendix.
+
+\section{Methods}
+
+\subsection{Regression methods}
+
+Regression is comprised of three elements (Mehta et al. (2019)), namely 
+
+\begin{itemize}
+\item \textit{\textbf{data}}
+
+\item \textit{\textbf{model}}
+
+\item \textit{\textbf{cost function}}
+
+\end{itemize}
+
+\textit{\textbf{The data}} consists of input values $(x_{i}, y_{i})$ and corresponding output variables $z_{i}$. In our case, $(x_{i}, y_{i})$ represents the coordinates of the plane and $z_{i}$ represents the heigth. For Franke's function, $(x_{i}, y_{i})$ are simply random values that we feed the function to generate $z_{i}$ values. For the terrain data, we are given values for $(x_{i}, y{i})$ and the $z_{i}$ that corresponds to each pair of plane coordinates.
+ 
+Gievn an input vector $X^{T}$ ($X^{T} = (X_{1}, \dots, X_{p})$ and $X_{j} = (x_{i}, y{i})$) and output vector $Y$, we want to make a prediction, $\hat{Y}$ of $Y$.
+Our regression \textit{\textbf{model}} is defined as (from Hastie et al. (2017))
+
+\begin{equation}
+\hat{Y} =\hat{\beta_{0}} + \sum_{j = 1}^{p} X_{j} \hat{\beta}_{j} + \epsilon \label{eq:reg_model}
+\end{equation}
+
+$\epsilon$ describes the error in our datapoints (simulated in Franke's function by adding noise).
+Equation \ref{eq:reg_model} can again be written as
+
+\begin{equation*}
+\hat{Y} = X^{T} \hat{\beta} + \epsilon
+\end{equation*}
+
+Since we have multiple input vectors $X$, we use matrix notation to find:
+
+\begin{equation*}
+\textbf{y} = \textbf{X} \beta + \epsilon
+\end{equation*}
+
+The matrix \textbf{X} is called a Vandermonde matrix (or design matrix) (Faul, A. C. (2016)). The setup of this matrix is shown in the Appendix. The Vandermonde matrix will have $p$ rows (as the input and output vectors contains $p$ elements) and $n$ columns, depending of the degree of the polynomial we choose. $p$ is the number of features and represents the compexity of our model. The complexity of our model is in therefore this case determined by the degree of the polynomials. $n$ is the number of observations and represents the sample size.
+
+We now want to fit a linear model to our data. In this project, we have used three different regression methods: ordinary least squares, ridge regression and LASSO regression. We define a \textit{\textbf{cost function}}. The cost function looks at the difference between the data and what the model predicts. We want to find the parameters $\hat{\beta}$ that minimize this function. The three regression methods differ in that they have different estimates for $\hat{\beta}$. 
+
+\subsubsection{Ordinary Least Squares (OLS)}
+
+The first regression method we used is the Ordinary Least Squares (OLS) method. 
+
+In the OLS method we want to minimize the residual sum of squares (Hastie et. al (2017)):
+
+\begin{equation}
+\text{Residual Sum of Squares} (\beta) = \frac{1}{n} \sum_{i = 1}^{n-1} (z_{i} - \bar{z}_{i} )^{2} \label{eq:rss}
+\end{equation}
+
+where $z_{i}$ is the real height given and $\bar{z}_{i} = f(x_{i}, y_{i})$ is the estimation of that height. This is our cost function.
+
+By minimizing the residual sum of squares, we mean that we want to find values for $\beta$ that gives the smallest possible value for equation \ref{eq:rss}.
+Applying equation \ref{eq:rss} to our model given above, we find that we want to minimize the following:
+
+\begin{equation*}
+\text{Residual Sum of Squares} (\beta) = (\textbf{y} - \textbf{X} \beta)^{T}(\textbf{y} - \textbf{X}\beta)
+\end{equation*}
+
+We can rewrite this to find
+
+\begin{equation}
+\textbf{X}^{T}(\textbf{y} - \textbf{X}\beta) = 0 \label{eq:OLS1}
+\end{equation}
+
+This equation can be solved for $\beta$ (and denote $\hat{\beta}^{OLS}$):
+
+\begin{equation}
+\hat{\beta}^{OLS} = (\textbf{X}^{T}\textbf{X})^{-1}\textbf{X}^{T}\textbf{y} \label{eq:OLS2}
+\end{equation}
+
+Equation \ref{eq:OLS1} will have a uniquie solution (given in equation \ref{eq:OLS2})  if $\textbf{X}^{T}\textbf{X}$ is non-singular (i.e. invertible). The solution vector $\hat{\beta}^{OLS}$ has dimension $\R^{p}$. \\
+
+As just explained, we have to assume that $\textbf{X}^{T}\textbf{X}$ is non-singular. This is often true when $n >> p$, i.e., when the number of observations is much larger the the number of features. However, in other cases, $\textbf{X}^{T}\textbf{X}$ might not be invertible, and there is no unique solution to equation \ref{eq:OLS1}. 
+There are many decomposition algorithms that can help in computing an inverse to reach a solution, like the Singular Value Decomposition (SVD) and LU factorization (Faul (2017)). Another approach to tackling this issue is to add a regularization parameter, which can make $\textbf{X}^{T}\textbf{X}$ singular. The following two methods introduces such regularization parameters.
+
+\subsubsection{Ridge regression}
+
+In ridge regression, we add a regularization penalty ($\lambda$) to the size of $\hat{\beta}$. This is a way of  ''shrinking'' the coefficients (Hastie et al. (2017)).
+
+We find an expression similair to that of the OLS, but with the penalty $\lambda$ added:
+
+\begin{equation*}
+\hat{\beta^{ridge}} = ( \textbf{X}^{T}\textbf{X} + \lambda\textbf{I})^{-1} \textbf{X}^{T}\textbf{y} \label{eq:Ridge}
+\end{equation*}
+
+The greater the penalty, the greater we shrink $\hat{\beta}$. We note that if $\lambda = 0$ then $\hat{\beta}^{ridge}$ equals the regression estimate from the OLS method (equation \ref{eq:OLS2}).
+
+As explained above, adding a regularization parameter can solve inverse problems we might encounter using the OLS method. Introducing a regularization parameter also helps with cases of poor generalization, which means cases in which the model cannot generalize to other situations than it has been trained for in the training set. This happens in cases where $p >> n$, i.e. the number of features, $p$ (model complexity) exceeds the number of observations, $n$ (sample size) (Mehta et al. 2019). How model complexity and sample size affects the performance of our model is discussed later in the section \textit{Bias-variance trade-off}.
+
+\subsubsection{LASSO regression}
+
+LASSO stands for ''least absolute shrinkage and selection operator'' (Mehta et al. (2019)). This method, like Ridge regression, uses a regularization parameter to shrink coefficients.
+
+LASSO tends to make the coefficients zero (''sparse'' solutions (Mahte et al. (2019)))
+
+As for the other two methods, we find an expression for the estimator $\hat{\beta}^{LASSO}$:
+
+\begin{equation}
+\hat{\beta}^{LASSO} = \underset{argmin}{\beta} \left\{ \frac{1}{2} \sum_{i = 1}^{N}(y_{i} - \beta_{0} - \sum_{j = 1}^{p}x_{i, j}\beta_{j})^{2} + \lambda \sum_{j=1}^{p} |\beta_{j}| \right\} \label{eq:LASSO}
+\end{equation}
+
+Equation \ref{eq:LASSO} has no analytical solution, we therefore use Scikit-learn to implement this part (see \textit{Implementation})
+
+%Lasso has a tendency to set coefficients equal to 0. This is because [SKRIV OM]
+
+\subsection{Resampling methods}
+
+\subsubsection{Bootstrap}
+
+Resampling methods is an important statistical technique and a key tool in machine learning. One of the most common methods are the Bootstrap method. Bootstrap is an expression used on statistical methods, new datasets are simulated by the original data set. Bootstrap occurs by repeatedly drawing random sample set from the sample space with replacement to achieve robust estimates (Hastie et al, (2017)). The method is quite general and don't require a distribution assumptions. \\
+\\
+\textbf{The procedure of Bootstrap method follows:}
+
+Split the data into training and test sets
+
+Set a number of samples  $n$
+
+\begin{enumerate}
+	\item Draw a sample set from the training set with replacement.
+	\item Compute and fit a model to the sample set.
+	\item Test the model on the test set. 
+	\item Repeat this process $n$ times
+\end{enumerate}
+After the process, calculate the mean of the evaluation scores (chapter 2.3).
+
+%\subsubsection{Training and test data}
+
+%\subsubsection{$K$-fold cross-validation}
+%$K$-fold cross-validation is a method where you split the data in $K$ different parts. The model is then trained on $K-1$ parts of the data and tested on the remaining $k$-th part. This is repeated so that all elements are used as test data. \\
+%The reason for using $K$-fold cross-validation is that we have a limitied amount of data. Simply splitting the data set once will not necessarily tell us how good the model is performing. 
+
+\subsection{Model evaluation}
+
+We used two different evaluation metrics to evalute the models; R2 and MSE.
+
+Mean Squared Error (MSE) taking the average of the square of the values, where the values is the differences between the observed values $y_i$ and the predicted ones $\hat{y_i}$.  The bigger the values the larger the error and 0 means that the regression model is perfect.
+
+% Equation - MSE 
+\[ MSE(\hat{y},\hat{\tilde{y}}) = \frac{1}{n}
+\sum_{i=0}^{n-1}(y_i-\tilde{y}_i)^2, 
+\] 
+
+The $R^{2}$-score function measures the variance explained by the model divided by the total variance, and tell us how well the regression model fits the data by percentage from a scale 0-100 \%.
+
+\[
+R^2(\hat{y}, \tilde{\hat{y}}) = 1 - \frac{\sum_{i=0}^{n - 1} (y_i - \tilde{y}_i)^2}{\sum_{i=0}^{n - 1} (y_i - \bar{y})^2},
+\]
+
+where $\bar{y}$ is the mean of the values.
+
+\subsection{Bias-variance trade-off}
+
+%Mahte et al. s. 11
+
+%________________BIAS-VARIANCE TRADEOFF___________________
+
+As mentioned above, generalization denotes the models abilitiy to learn and generalize to other situations than the one it has been trained on. We can for instance have a model that overfits the data, which means that a complex model, at small sample sizes, is tricked to believe that noise represent real patterns in the data, rather than filtering it as noise (Mahte et al. (2019)).\\
+
+Bias describes the part of the generalization error which exist due to wrong assumptions, such as assuming that the data is linear when it actually quadratic. A high-bias model i most likely to unfit the training data. \\
+Variance is this part of the generalization error due to the model's excessive sensitivity to small variations is in the training data. A model with many degrees of freedom (such as a high-degree polynomial model) is likely to have high variance, and thus to overfit the training data.
+
+Increasing a model's complexity will typically increases its variance and reduce its bias. Conversely, reducing a model's complexity increases its bias and reduces its variance. This is why it is called a \textbf{bias-variance tradeoff}. \\
+
+The predictive performance of the model therefore depends on the number of columns in the design matrix \textbf{X} and the amount of data we have. We must therefore either choose a less complex model or increase the sample size by collecting more data. Figure \ref{fig:biasvariance} in the \textit{Results} section shows how the predicition error of our model depends on the complexity of the model.
+
+Mathematically, we can look at it this way:
+\\
+We know that the true data is generated from a noisy model
+$$y\footnote{Not to be confused with the input values $y_{i}$ described above} = f(x) + \boldsymbol{\varepsilon}$$
+
+Our $\boldsymbol{\varepsilon}$ is normally distributed with mean zero and standard deviation $\sigma^2$. In our project the derivation of the ordinary least squares method (OLS) are defined as an approximation for the function $f$ with the parameters $\boldsymbol{\beta}$ and the design matrix $\mathbf{X}$ as 
+$${\hat{y}}=\mathbf{X}\boldsymbol{\beta}$$
+
+We found our parameters $\boldsymbol{\beta}$  by optimizing the means squared error by the cost function
+$$C(\mathbf{X},\boldsymbol{\beta}) =\frac{1}{n}\sum_{i=0}^{n-1}(y_i-\tilde{y}_i)^2=\mathbb{E}\left[({y}-{\tilde{y}})^2\right]$$
+
+We can rewrite this (see Appendix) to find:
+
+$$ \mathbb{E}\left[({y}-\tilde{y})^2\right] = \frac{1}{n}\sum_i(f_i-\mathbb{E}\left[{\tilde{y}}\right])^2+\frac{1}{n}\sum_i(\tilde{y}_i- \mathbb{E}\left[{\tilde{y}}\right])^2+\sigma^2$$
+
+where
+$$Bias[\hat{y}]^2 = \frac{1}{n}\sum_i(f_i-\mathbb{E}\left[{\tilde{y}}\right])^2 $$ 
+
+and
+
+$$ Var[\hat{y}] = \frac{1}{n}\sum_i(\tilde{y}_i- \mathbb{E}\left[{\tilde{y}}\right])^2,$$
+
+i. e.,
+
+$$= Bias[\hat{y}]^2 + \sigma^2  + Var[\hat{y}]$$
+
+
+
+
+ 
+\subsection{Implementation and data}
+
+%The regression methods were done on Franke's function (equation \ref{eq:Franke} given in the appendix). A plot (done from the code provided in the assignment) is shown in figure %\ref{fig:FrankePlot}.
+
+%Franke's fuction is a function dependent on two variables $x$ and $y$. We will therefore try to fit the function using a bivariate polynomial on the form given in \ref{eq:bivPoly} in the appendix.
+
+%First, a dataset was generated using Python's pseudo-random number generator function. All the algortihms and methods described below was tested on this dataset. Then, real digital terrain data was introduced. We chose an area [beskriv hvilket område] to 
+
+
+The dataset was generated by using Python's \texttt{arange} to simply produce a list of numbers $(x, y)$ to use as input to Franke's function. After feeding these numbers to Franke's function, we add noise. The ''amount'' of noise added can simply be tuned by a scalar $\nu$ multiplied with the noise:
+
+\begin{equation}
+z(x,y) = f(x,y) +  \nu \cdot \epsilon
+\end{equation}
+
+The terrain data was extraced from the website https://earthexplorer.usgs.gov/\footnote{We used the first example file provided}. We used randoms patches of the dataset and then took the mean of the statistics we found from those patches.
+
+\begin{figure}[ht]
+\centering
+\begin{subfigure}{.5\textwidth}
+  \centering
+  \includegraphics{terrain_plot.png}
+  \caption{Terrain 1}
+  \label{fig:terrain1}
+\end{subfigure}%
+\begin{subfigure}{.5\textwidth}
+  \centering
+  \includegraphics{terrain_plot_2}
+  \caption{Terrain 2}
+  \label{fig:terrain2}
+\end{subfigure}
+\caption{Terrain plots}
+\label{fig:Terrain}
+\end{figure}
+
+
+The OLS and Ridge methods were implemented ''manually'', i.e. based on equation \ref{eq:OLS2} and \ref{eq:Ridge} respectively. The functions are shown in the Appendix. For LASSO, as noted, there is no analytical solution, so we used \textit{scikit-learn's} functionality for this. The first two methods were also compared to the results generated from \textit{scikit-learn}.
+
+We implemented the bootstrap method. We used \textit{scikit-learn's} to split our data into training and test data. Then we used the different methods on the training data, and used the set of $\beta$'s we got on the test data, to se how well it performed.
+\section{Results and discussion}
+
+\subsection{Generated data}
+
+\begin{figure}[ht]
+\centering
+\begin{subfigure}{.5\textwidth}
+  \centering
+  \includegraphics[width=.6\linewidth]{franke_olsfit.png}
+  \caption{OLS fit 1}
+  \label{fig:olsfit1}
+\end{subfigure}%
+\begin{subfigure}{.5\textwidth}
+  \centering
+  \includegraphics[width=.6\linewidth]{franke_olsfit2.png}
+  \caption{OLS fit 2}
+  \label{fig:olsfit2}
+\end{subfigure}
+\caption{OLS fits}
+\label{fig:olsfits}
+\end{figure}
+
+Figure \ref{fig:olsfits} shows the fit produced using the OLS method both on top (\ref{fig:olsfit1}) and alone (\ref{fig:olsfit2}).
+
+\paragraph{Tuning of lambda}
+
+\begin{figure}[h!]
+\centering
+  \includegraphics[width=0.6\textwidth]{ridge_lambdas.png}
+  \caption{$R^{2}$ and MSE scores as a function of lambda (Ridge), $n = 5$}
+  \label{fig:lambdas_ridge}
+\end{figure}
+
+\begin{figure}[h!]
+\centering
+  \includegraphics[width=0.6\textwidth]{lasso_lambdas.png}
+  \caption{$R^{2}$ and MSE scores as a function of lambda (Ridge), $n = 5$}
+  \label{fig:lambdas_lasso}
+\end{figure}
+
+Figure \ref{fig:lambdas_ridge} and \ref{lambdas_lasso} show how R2 and MSE scores change with the hyperparameter $\lambda$. We find an ideal value to be quite low, around 0.001 for both, and so used these values throughout, when looking at other aspects of the analysis. However, small values of $\lambda$ for LASSO makes it behave strange, probably due to how \textit{scikit-learn} uses this to calculate the learning rate and so the method might converge.
+
+\paragraph{Confidence intervals for $\beta$}
+
+ 
+% Table \ref{tab:ConIntOLS} shows the confidence intervals for the variance of $\beta$.
+
+\begin{table}[h!]
+\caption{Confidence interval (OLS)}
+\begin{center}
+\begin{tabular}{cccc}
+	\hline
+	\multicolumn{4}{c}{}\\
+	$\beta$ & Lower limit & Upper limit & Var\\
+	\hline
+	$\beta_{0}$ & 0.3278 & 0.7198 & Var: 0.59371 \\
+	$\beta_{1}$ & 4.83956 & 5.23156 & Var: 7.55623 \\
+	$\beta_{2}$ & 3.48951 & 3.88151 & Var: 7.55623 \\
+	$\beta_{3}$ & -17.78303 & -17.39103 & Var: 40.34353 \\
+	$\beta_{4}$ & -8.43359 & -8.04159 & Var: 40.34353 \\
+	$\beta_{5}$ & -12.37218 & -11.98018 & Var: 30.64174 \\
+	$\beta_{6}$ & 9.92037 & 10.31237 & Var: 97.75542 \\
+	$\beta_{7}$ & -9.96499 & -9.57299 & Var: 97.75542 \\
+	$\beta_{8}$ & 27.0471 & 27.4391 & Var: 70.09944 \\
+	$\beta_{9}$ & 22.73779 & 23.12979 & Var: 70.09944 \\
+	$\beta_{10}$ & 14.25747 & 14.64947 & Var: 108.53728 \\
+	$\beta_{11}$ & 30.45056 & 30.84256 & Var: 108.53728 \\
+	$\beta_{12}$ & -29.64032 & -29.24832 & Var: 80.29257 \\
+	$\beta_{13}$ & -3.84756 & -3.45556 & Var: 73.83169 \\
+	$\beta_{14}$ & -33.00839 & -32.61639 & Var: 80.29257 \\
+	$\beta_{15}$ & -12.72548 & -12.33348 & Var: 44.83459 \\
+	$\beta_{16}$ & -16.76062 & -16.36862 & Var: 44.83459 \\
+	$\beta_{17}$ & 8.86653 & 9.25853 & Var: 37.83166 \\
+	$\beta_{18}$ & 5.20763 & 5.59963 & Var: 36.35623 \\
+	$\beta_{19}$ & -3.35257 & -2.96057 & Var: 36.35623 \\
+	$\beta_{20}$ & 16.36135 & 16.75335 & Var: 37.83166 \\
+\end{tabular}
+\end{center}
+\label{tab:ConIntOLS}
+\end{table}
+
+\begin{table}[h!]
+\caption{Confidence interval (Ridge)}
+\begin{center}
+\begin{tabular}{cccc}
+	\hline
+	\multicolumn{4}{c}{}\\
+	$\beta$ & Lower limit & Upper limit & Var\\
+	\hline
+	$ \beta_{0} $ & 0.52095 & 0.91295 & Var: 0.59371 \\
+	$ \beta_{1} $ & 2.48263 & 2.87463 & Var: 7.55623 \\
+	$ \beta_{2} $ & 2.09851 & 2.49051 & Var: 7.55623 \\
+	$ \beta_{3} $ & -10.76059 & -10.36859 & Var: 40.34353 \\
+	$ \beta_{4} $ & -7.60571 & -7.21371 & Var: 40.34353 \\
+	$ \beta_{5} $ & -1.75528 & -1.36328 & Var: 30.64174 \\
+	$ \beta_{6} $ & 6.0122 & 6.4042 & Var: 97.75542 \\
+	$ \beta_{7} $ & 1.6983 & 2.0903 & Var: 97.75542 \\
+	$ \beta_{8} $ & 3.461 & 3.853 & Var: 70.09944 \\
+	$ \beta_{9} $ & 0.67427 & 1.06627 & Var: 70.09944 \\
+	$ \beta_{10} $ & 6.90676 & 7.29876 & Var: 108.53728 \\
+	$ \beta_{11} $ & 5.42815 & 5.82015 & Var: 108.53728 \\
+	$ \beta_{12} $ & 0.22934 & 0.62134 & Var: 80.29257 \\
+	$ \beta_{13} $ & 3.82003 & 4.21203 & Var: 73.83169 \\
+	$ \beta_{14} $ & -2.80012 & -2.40812 & Var: 80.29257 \\
+	$ \beta_{15} $ & -6.28271 & -5.89071 & Var: 44.83459 \\
+	$ \beta_{16} $ & -2.79464 & -2.40264 & Var: 44.83459 \\
+	$ \beta_{17} $ & -3.52449 & -3.13249 & Var: 37.83166 \\
+	$ \beta_{18} $ & 0.05861 & 0.45061 & Var: 36.35623 \\
+	$ \beta_{19} $ & -3.298 & -2.906 & Var: 36.35623 \\
+	$ \beta_{20} $ & 0.95116 & 1.34316 & Var: 37.83166 \\
+\end{tabular}
+\end{center}
+\label{tab:ConIntRidge}
+\end{table}
+
+\begin{table}[h!]
+\caption{Confidence interval (LASSO)}
+\begin{center}
+\begin{tabular}{cccc}
+	\hline
+	\multicolumn{4}{c}{}\\
+	$\beta$ & Lower limit & Upper limit & Var\\
+	\hline
+	$ \beta_{0} $ & 0.79379 & 1.18579 & Var: 0.59371 \\
+	$ \beta_{1} $ & -0.70764 & -0.31564 & Var: 7.55623 \\
+	$ \beta_{2} $ & -0.196 & 0.196 & Var: 7.55623 \\
+	$ \beta_{3} $ & -0.4639 & -0.0719 & Var: 40.34353 \\
+	$ \beta_{4} $ & -1.50749 & -1.11549 & Var: 40.34353 \\
+	$ \beta_{5} $ & -0.13789 & 0.25411 & Var: 30.64174 \\
+	$ \beta_{6} $ & -0.196 & 0.196 & Var: 97.75542 \\
+	$ \beta_{7} $ & -0.196 & 0.196 & Var: 97.75542 \\
+	$ \beta_{8} $ & 0.28827 & 0.68027 & Var: 70.09944 \\
+	$ \beta_{9} $ & -0.196 & 0.196 & Var: 70.09944 \\
+	$ \beta_{10} $ & -0.196 & 0.196 & Var: 108.53728 \\
+	$ \beta_{11} $ & -0.196 & 0.196 & Var: 108.53728 \\
+	$ \beta_{12} $ & -0.14733 & 0.24467 & Var: 80.29257 \\
+	$ \beta_{13} $ & -0.196 & 0.196 & Var: 73.83169 \\
+	$ \beta_{14} $ & -0.196 & 0.196 & Var: 80.29257 \\
+	$ \beta_{15} $ & -0.196 & 0.196 & Var: 44.83459 \\
+	$ \beta_{16} $ & 0.41754 & 0.80954 & Var: 44.83459 \\
+	$ \beta_{17} $ & -0.196 & 0.196 & Var: 37.83166 \\
+	$ \beta_{18} $ & -0.196 & 0.196 & Var: 36.35623 \\
+	$ \beta_{19} $ & -0.196 & 0.196 & Var: 36.35623 \\
+	$ \beta_{20} $ & -0.196 & 0.196 & Var: 37.83166 \\
+\end{tabular}
+\end{center}
+\label{tab:ConIntLASSO}
+\end{table}
+
+Tables \ref{tab:ConIntOLS}, \ref{tab:ConIntRidge} and \ref{tab:ConIntLASSO} show the confidence intervals (made as described in Appendix) for $\beta$ for the three different methods.
+
+Note that the variances in tables \ref{tab:ConIntOLS}, \ref{tab:ConIntRidge} and \ref{tab:ConIntLASSO} are the same for the different $\beta$'s. This is because the variance is found along the diagonal of $((\textbf{X}^{T}\textbf{X})^{-1}$. This matrix is called a correlation matrix. A correlation matrix is a m$\times$m-table showing the correlation coefficients between to variables in each cell and the variances appears along the diagonal (Bock, T.). The covariance appears in the non-diagonal cells. The covariance tell us the measure of how linear independent there are between to values. The goal of the correlation matrix is to see the patterns in a large amount of data. So in our case, the diagonal elements represents the variance.
+
+Note also in table \ref{ConIntLASSO} that a lot of the coefficients have confidence interval $[-1.96 - 1.96]$, which means that the coefficient is 0, as discussed above.
+
+% PLOT CONFIDENCE INTERVALS?
+
+\paragraph{Model complexity and noise}
+
+\begin{figure}[h!]
+\centering
+  \includegraphics[width=0.6\textwidth]{modelcomplexity_all.png}
+  \caption{$R^{2}$ and MSE scores as a function of model complexity, $\nu = 0.1$}
+  \label{fig:ModCompALL}
+\end{figure}
+
+Figure \ref{fig:ModCompALL} shows
+
+\begin{figure}[h!]
+\centering
+  \includegraphics[width=0.6\textwidth]{noise_all.png}
+  \caption{$R^{2}$ and MSE scores as a function of noise, $n = 5$}
+  \label{fig:noiseALL}
+\end{figure}
+
+Figure \ref{fig:noiseALL}
+
+\paragraph{Bias-variance trade-off}
+
+\begin{figure}[h!]
+\centering
+  \includegraphics[width=0.6\textwidth]{biasvariance.png}
+  \caption{Bias-variance trade-off}
+  \label{fig:biasvariance}
+\end{figure}
+
+Figure \ref{fig:biasvariance} shows the bias-variance trade-off situation described above.
+We see that as the model complexity increases, we get better estimates both for the training and test case. However, as the model gets too complex, the test error increases and the model is overfitting.
+
+\paragraph{Bootstrap}
+
+\begin{table}[ht]
+\caption{OLS}
+\begin{center}
+\begin{tabular}{ccc}
+	\hline
+	\multicolumn{3}{c}{}\\
+	Polynomial degree&R2&MSE\\
+	\hline
+	n = 1&0.6779&0.0266\\
+	n = 2&0.7491&0.0207\\
+	n = 3&0.8839&0.0096\\
+	n = 4&0.9248&0.0062\\
+	n = 5&0.9699&0.0025\\
+	n = 6&0.9797&0.0017 \\
+	n = 7&0.9904&0.0008 \\
+	n = 8&0.9890&0.0009 \\
+	n = 9&0.9854&0.0012 \\
+\end{tabular}
+\end{center}
+\label{tab:R2MSE_OLS}
+\end{table}
+
+
+\begin{table}[ht]
+\caption{Ridge regression}
+\begin{center}
+\begin{tabular}{ccc}
+	\hline
+	\multicolumn{3}{c}{}\\
+	Polynomial degree&R2&MSE\\
+	\hline
+	n = 1&0.6778&0.0266\\
+	n = 2&0.7490&0.0208\\
+	n = 3&0.8783&0.0101\\
+	n = 4&0.8807&0.0099\\
+	n = 5&0.9699&0.0090\\
+	n = 6&0.9040&0.0079\\
+	n = 7&0.9130&0.0307 \\
+	n = 8&0.9180&0.0068 \\
+	n = 9&0.9213&0.0065 \\
+\end{tabular}
+\end{center}
+\label{tab:R2MSE_ridge}
+\end{table}
+
+
+ 
+ \begin{table}[ht]
+\caption{LASSO regression}
+\begin{center}
+\begin{tabular}{ccc}
+	\hline
+	\multicolumn{3}{c}{}\\
+	Polynomial degree&R2&MSE\\
+	\hline
+	n = 1&0.5974&0.0333\\
+	n = 2&0.6286&0.0307\\
+	n = 3&0.6286&0.0307\\
+	n = 4&0.6286&0.0307\\
+	n = 5&0.6286&0.0307\\
+	n = 6&0.6286&0.0307\\
+	n = 7&0.6286&0.0307\\
+	n = 8&0.6286&0.0307\\
+	n = 9&0.6286&0.0307\\
+\end{tabular}
+\end{center}
+\label{tab:R2MSE_LASSO}
+\end{table}
+
+\begin{figure}[h]
+  \includegraphics{bootstrap_complexity.png}
+  \caption{R2 and MSE as a function of model complexity after 5000 bootstraps}
+  \label{fig:bootstrap_comp}
+\end{figure}
+ 
+Tables \ref{tab:R2MSE_OLS}, \ref{tab:R2MSE_ridge} and \ref{tab:R2MSE_LASSO} shows the R2 and MSE scores after 5000 bootstraps for different polynomial degrees. The same information is shown in figure \ref{fig:bootstrap_comp}
+ 
+As we can see, polynomial of degree 7 performs the best for OLS, whereas degree 5 performs best for Ridge. For LASSO, it seems the scores converges somehow, which we found strange. We do not believe that degrees of polynomial 2 up to 9 performs equally.
+We conclude from this that OLS performs best (R2 = 0.9904 and MSE = 0.0008 vs. R2 = 0.9180 and MSE = 0.0068). OLS and Ridge has the same performance up until degree 3.
+
+Bootstrap gave overall better results.
+
+\subsection{Terrain data}
+
+\begin{table}[ht]
+\caption{Terrain data (OLS)}
+\begin{center}
+\begin{tabular}{ccc}
+	\hline
+	\multicolumn{3}{c}{}\\
+	Polynomial degree&R2&MSE\\
+	\hline
+	n = 2&0.5877&3163.55\\
+	n = 5&0.9049&453.74\\
+	n = 10&0.9789&116.01\\
+	n = 15&-0.0684&2028831.16\\
+	n = 20&-0.018&4475979.74\\
+\end{tabular}
+\end{center}
+\label{tab:terrainOLS}
+\end{table}
+
+\begin{table}[ht]
+\caption{Terrain data (Ridge)}
+\begin{center}
+\begin{tabular}{ccc}
+	\hline
+	\multicolumn{3}{c}{}\\
+	Polynomial degree&R2&MSE\\
+	\hline
+	n = 2&0.5877&3163.55\\
+	n = 5&0.8902&533.39\\
+	n = 10&0.9301&330.02\\
+	n = 15&0.9415&276.06\\
+	n = 20&0.9463&251.25\\
+\end{tabular}
+\end{center}
+\label{tab:terrainRidge}
+\end{table}
+
+\begin{table}[ht]
+\caption{Terrain data (LASSO)}
+\begin{center}
+\begin{tabular}{ccc}
+	\hline
+	\multicolumn{3}{c}{}\\
+	Polynomial degree&R2&MSE\\
+	\hline
+	n = 2&0.7595&167451322.22\\
+	n = 5&0.8644&176352105.81\\
+	n = 10&0.8900&177839653.61\\
+	n = 15&0.8950&178071263.96\\
+	n = 20&0.8968&178125605.48\\
+\end{tabular}
+\end{center}
+\label{tab:terrainLASSO}
+\end{table}
+
+Tables \ref{tab:terrainOLS}, \ref{tab:terrainRidge} and \ref{tab:terrainLASSO} show the mean of the R2 and MSE scores for 30 randomly chosen patches of the terrain 1 data. Lambda values for Ridge and LASSO were $\lambda = 0.001$ and $\lambda = 0.01$ respectively.
+As we can see, the MSE values are enormous. We suspect that this has more to do with our implementation than it is an actual measure of the method. We therefore look at the R2 scores for the following analysis:
+OLS performs best with polynomial degree 10. Ridge and Lasso perform best with degree 20, but still worse than OLS.
+
+\paragraph{Problems}
+We encountered numerous problems in this project, which of course affected the results. We were unable to fix all problems, as discussed in various parts above.
+We found implementation of MSE scores a bit difficult, as shown above. It is therefore difficult to say something meaningful for MSE scores for the terrain data.
+
+
+\section{Conclusion}
+
+We conclude that OLS overall performed best for us. LASSO and it coefficients made it difficult for us to get proper results, due to various reasons. Resampling (through implementation of the bootstrap algortihm) gave better results, so we see that this is important.
+ We could clearly see the expected bias-variance trade-off tendency as we expected, and so we will keep this fine balance between model complexity and dataset in mind in future projects involving machine learning algorithms. 
+%%%%%%%%%
+
+\section{Appendix}
+
+\subsection{Mathematical functions}
+
+\subsubsection{Franke's function}
+
+\begin{align}
+f(x,y) &= \frac{3}{4}\exp{\left(-\frac{(9x-2)^2}{4} - \frac{(9y-2)^2}{4}\right)}+\frac{3}{4}\exp{\left(-\frac{(9x+1)^2}{49}- \frac{(9y+1)}{10}\right)} \nonumber \\
+&+\frac{1}{2}\exp{\left(-\frac{(9x-7)^2}{4} - \frac{(9y-3)^2}{4}\right)} -\frac{1}{5}\exp{\left(-(9x-4)^2 - (9y-7)^2\right) } \label{eq:Franke}
+\end{align}
+
+\subsubsection{Bivariate polynomial}
+
+\begin{equation}
+f(x,y) = \sum_{i,j} a_{i,j} x^{i} y^{j} \label{eq:bivPoly}
+\end{equation}
+
+\subsubsection{Vandermonde matrix}
+
+Each element of the first column of the Vandermonde matrix has the value 1. The other columns represent the different terms in a bivariate polynomial. That means that one column will correspond to the $x^{2}y$ term, another will correspond to the $xy^{3}$ term and so on.
+
+The Vandermonde matrix (or design matrix) of degree 3 is shown as an example:
+
+\subsubsection{Bias-variance trade-off}
+
+We found our parameters $\boldsymbol{\beta}$  by optimizing the means squared error by the cost function and want to show:
+
+$$ \mathbb{E}\left[({y}-\tilde{y})^2\right] = \frac{1}{n}\sum_i(f_i-\mathbb{E}\left[{\tilde{y}}\right])^2+\frac{1}{n}\sum_i(\tilde{y}_i- \mathbb{E}\left[{\tilde{y}}\right])^2+\sigma^2$$
+
+% Variance
+By deifinition, the variance is defined for any random variable $X$ as
+
+% Definition of the variance - equation
+$$ VAR[\mathbf{X}] = \mathbb{E}[\mathbf{X}^{2}] - (\mathbb{E}[\mathbf{X}])^{2} $$
+
+We rearranging it and get
+$$ \mathbb{E}[\mathbf{X}^{2}] = VAR[\mathbf{X}] + (\mathbb{E}[\mathbf{X}])^{2}  $$
+
+
+Since $f$ is determinstic, also entirely determined by its initial state and inputs and we know $y = f + \boldsymbol{\varepsilon}$ and $\mathbb{E}[\boldsymbol{\varepsilon}] = 0$. We can rewrite 
+$$\mathbb{E}[y] = \mathbb{E}[{f} + \boldsymbol{\varepsilon}] = \mathbb{E}[f] = f$$
+
+
+And since $Var[\boldsymbol{\varepsilon}] = \sigma^2$,
+
+$$ Var[y] = \mathbb{E}[(y - \mathbb{E}[y])^{2}] = \mathbb{E}[(y-f)^{2}]= \mathbb{E}[(f + \boldsymbol{\varepsilon} - f)^{2}]$$
+$$= \mathbb{E}[\boldsymbol{\varepsilon}^{2}] = Var[\boldsymbol{\varepsilon}] + (E[\boldsymbol{\varepsilon}])^{2} = \sigma^{2}$$
+
+
+
+Our $\boldsymbol{\varepsilon}$ and $\hat{y}$ are independent, we can the rewrite the equation as
+
+%__________Likningen_____________________________
+
+$$ \mathbb{E}[(y - \hat{y})^{2}] $$
+
+$$ = \mathbb{E}[(f + \boldsymbol{\varepsilon} - \hat{y})^{2}]$$
+
+$$= \mathbb{E}[(f + \boldsymbol{\varepsilon} - \hat{y} + \mathbb{E}[\hat{y}] - \mathbb{E}[\hat{y}])^2]$$
+
+$$ = \mathbb{E}[(f - \mathbb{E}[\hat{y}])^2]  + \mathbb{E}[\boldsymbol{\varepsilon}^2] + \mathbb{E}[(\mathbb{E}[\hat{y}] - \hat{y})^2] +2\mathbb{E}[(f - \mathbb{E}[\hat{y}])\boldsymbol{\varepsilon}] + 2\mathbb{E}[\boldsymbol{\varepsilon} (E[\hat{y}]- \hat{y})] + 2\mathbb{E}[(\mathbb{E}[\hat{y}] - \hat{y})(f - \mathbb{E}[\hat{y}])] $$
+
+$$ = (f- \mathbb{E}[\hat{y}])^2 + \mathbb{E}[\boldsymbol{\varepsilon}^2] + \mathbb{E}[(\mathbb{E}[\hat{y}] -\hat{y})^2] + 2(f - \mathbb{E}[\hat{y}])\mathbb{E}[\boldsymbol{\varepsilon}] + 2\mathbb{E}[\boldsymbol{\varepsilon}]\mathbb{E}[\mathbb{E}[\hat{y}]- \hat{y}] + 2\mathbb{E}[\mathbb{E}[[\hat{y}]- \hat{y}](f - \mathbb{E}[\hat{y}])$$
+
+$$= (f - \mathbb{E}[\hat{y}])^2 + \mathbb{E}[\boldsymbol{\varepsilon}^2] + \mathbb{E}[(\mathbb{E}[\hat{y}]- \hat{y})^2]$$
+
+$$= (f - \mathbb{E}[\hat{y}])^2 + Var[y] + Var[\hat{y}]$$
+
+$$= Bias[\hat{y}]^2 + Var[y] + Var[\hat{y}]$$
+
+$$= Bias[\hat{y}]^2 + \sigma^2  + Var[\hat{y}]$$
+
+
+
+We find that the bias is given as
+$$Bias[\hat{y}]^2 = \frac{1}{n}\sum_i(f_i-\mathbb{E}\left[{\tilde{y}}\right])^2 $$
+
+and the variance is given as
+$$ Var[\hat{y}] = \frac{1}{n}\sum_i(\tilde{y}_i- \mathbb{E}\left[{\tilde{y}}\right])^2$$
+
+\subsubsection{Confidence intervals}
+
+So, a 97.5 \% confidence interval tells us that we can be 97.5 \% confident that our estimated value for, in this case, $\beta$, lies within this interval.
+
+To produce the confidence intervals, we have used the following equation from Hastie et al. (2017):
+
+\begin{equation}
+[\beta_{j} - z^{(1-\alpha)}v_{j}^{1/2}\hat{\sigma} \;\;\; , \;\;\; \beta_{j} + z^{(1-\alpha)}v_{j}^{1/2}\hat{\sigma}] \label{eq:ConInt}
+\end{equation}
+
+where $v_{j}$ is the $j$-th diagonal element of $(\textbf{X}^{T}\textbf{X})^{-1}$ and multiplied with $\hat{\sigma}$ is the standard deviation of $\beta$ ($\text{STD}_{\beta}$). $z^{(1-\alpha)}$ denotes the $(1-\alpha)$ percentile (of the normal distribution), i.e. $z^{(1-\alpha)} = 1.96$ for the 97.5 \% confidence interval. So, equation \ref{eq:ConInt} can (in the case of a 97.5 \% confidence interval for $\beta$), be expressed as:
+
+\begin{equation}
+\beta \pm 1.96 \cdot STD_{\beta}
+\end{equation}
+
+\subsection{Code snippets}
+
+\paragraph{Ordinary least squares}
+
+\texttt{def linreg\_ols(X, z):}
+    
+\indent \texttt{\# Solving for beta}
+    \texttt{beta = np.linalg.inv(np.transpose(X).dot(X)).dot(np.transpose(X)).dot(z)}
+    
+    \texttt{y\_predict\_ols = X \@ beta}
+    \\
+    \texttt{ return beta, y\_predict\_ols}
+
+\paragraph{Ridge regression}
+
+\texttt{def ridgereg(X, z, lambda\_ridge):}
+
+    \indent \texttt{\# Solving for beta}
+    \texttt{beta\_ridge = np.linalg.inv(np.transpose(X).dot(X) + lambda\_ridge*np.identity(X.shape[1])).dot(np.transpose(X)).dot(z)}
+
+    \texttt{y\_predict\_ridge = X \@ beta\_ridge}
+    
+    \texttt{return beta\_ridge, y\_predict\_ridge}
+
+
+\section{Bibliography}
+
+Bock, T. (20XX) What is a correlation matrix? Downloaded from: https://www.displayr.com/what-is-a-correlation-matrix/ (05.10.2019) \\
+
+Devore, J. L. \& Berk, K. N. (2012) \textit{Modern Mathematical Statistics with Applications} 2nd. ed. Springer. \\
+
+Faul, A. C. (2016) \textit{A Concise Introduction to Numerical Analysis} CRC Press. \\
+
+Hastie, T., Tibshirani, R. \& Friedman, J. (2017) \textit{The Elements of Statistical Learning: Data Mining, Inference, and Prediction} 2nd. ed. Springer. \\
+
+Mehta, P. Bukov, M., Wang, C-H., Day, A. G. R., Richardson, C. Fisher, C. K. \& Schwab, D. J. (2019) \textit{A high-bias, low-variance introduction to Machine Learning for physicists} Physics Reports (Vol 810) https://doi.org/10.1016/j.physrep.2019.03.001.
+
+
+
+\end{document}
